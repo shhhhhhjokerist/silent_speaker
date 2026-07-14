@@ -385,23 +385,39 @@ def tts_offline(text, voice_name=None):
 
 
 def _tts_offline_macos(text, voice_name=None):
-    """macOS: 使用原生 say 命令合成语音。"""
+    """macOS: 使用原生 say 命令合成语音，失败则回退 pyttsx3。"""
     import subprocess
 
-    # macOS 中文语音：Tingting (普通话), Sin-ji (粤语), Mei-Jia (台湾)
+    # ---- 方案 A: 原生 say 命令（最可靠）----
+    # macOS 中文语音：Tingting (普通话)
     voice = voice_name or "Tingting"
 
-    # say 命令输出 AIFF 格式（miniaudio 可自动解码）
     with tempfile.NamedTemporaryFile(suffix=".aiff", delete=False) as f:
         out_path = f.name
 
+    say_ok = False
     try:
-        subprocess.run(
-            ["say", "-v", voice, "-r", "200", "-o", out_path, text],
-            capture_output=True,
-            timeout=10,
-            check=True,
+        # 先列出可用语音确认 voice 存在
+        result = subprocess.run(
+            ["say", "-v", "?"], capture_output=True, timeout=5,
         )
+        available = result.stdout.decode("utf-8", errors="replace")
+        if voice not in available:
+            # 回退到系统默认语音
+            voice = None
+
+        cmd = ["say", "-r", "200", "-o", out_path]
+        if voice:
+            cmd[1:1] = ["-v", voice]
+        cmd.append(text)
+
+        subprocess.run(cmd, capture_output=True, timeout=10, check=True)
+
+        # 确认输出文件非空
+        if os.path.getsize(out_path) < 100:
+            raise RuntimeError("say 输出文件过小，可能为空")
+
+        say_ok = True
 
         import miniaudio
         decoded = miniaudio.decode_file(out_path, dither=miniaudio.DitherMode.NONE)
@@ -419,20 +435,20 @@ def _tts_offline_macos(text, voice_name=None):
         samples = samples / float(2 ** (decoded.sample_width * 8 - 1))
         return samples, decoded.sample_rate
 
-    except FileNotFoundError:
-        raise RuntimeError(
-            "macOS say 命令不可用。请确认系统完整性。"
-        )
-    except subprocess.CalledProcessError as e:
-        # 语音名可能无效，尝试默认语音
-        stderr = e.stderr.decode("utf-8", errors="replace") if e.stderr else ""
-        raise RuntimeError(f"macOS say 命令失败: {stderr}")
+    except Exception as e:
+        if say_ok:
+            raise  # miniaudio 解码失败，不是 say 的问题
+        # say 失败 → 回退方案 B
+        print(f"  [macOS say 失败: {e}，回退 pyttsx3...]")
 
     finally:
         try:
             os.unlink(out_path)
         except OSError:
             pass
+
+    # ---- 方案 B: pyttsx3 兜底（macOS 上不太稳定）----
+    return _tts_offline_windows(text, voice_name)
 
 
 def _tts_offline_windows(text, voice_name=None):
