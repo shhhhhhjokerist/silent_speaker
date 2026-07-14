@@ -1,10 +1,10 @@
 {
     "tts_engine": "edge",
-    "voice": "zh-CN",
+    "voice": "zh-CN-XiaoxiaoNeural",
     "rate": "+10%",
     "pitch": "+0Hz",
     "volume": 1.0,
-    "output_device": 8,
+    "output_device": 6,
     "google_lang": "zh-CN",
     "google_proxy": "",
     "hot_phrases": {

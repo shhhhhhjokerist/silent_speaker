@@ -187,6 +187,8 @@ def resolve_output_device(config_device):
 # ---------------------------------------------------------------------------
 
 # ---- Edge TTS ----
+
+# 已知合法的 Edge TTS 中文语音 ID（实测验证过的）
 async def tts_edge(text, voice, rate, pitch):
     """
     使用 Microsoft Edge TTS 合成语音。
@@ -371,7 +373,9 @@ def _read_wav(path):
 # ---- 本地离线 TTS ----
 def tts_offline(text, voice_name=None):
     """
-    使用 Windows SAPI5 (pyttsx3) 离线合成语音。
+    使用系统离线 TTS 合成语音。
+    Windows: SAPI5 (pyttsx3)
+    macOS:   NSSpeechSynthesizer (pyttsx3) — 输出 AIFF 格式
     返回 (audio_samples, sample_rate)。
     """
     import pyttsx3
@@ -393,19 +397,35 @@ def tts_offline(text, voice_name=None):
                 engine.setProperty("voice", v.id)
                 break
 
-    # 输出到临时 WAV
+    # macOS pyttsx3 原生输出可能不是 WAV（NSSpeechSynthesizer → AIFF）
+    # 统一用 .wav 后缀，但解码时用 miniaudio 自动检测格式
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-        wav_path = f.name
+        out_path = f.name
 
     try:
-        engine.save_to_file(text, wav_path)
+        engine.save_to_file(text, out_path)
         engine.runAndWait()
 
-        samples, sr = _read_wav(wav_path)
-        return samples, sr
+        # 用 miniaudio 解码，自动识别 WAV/AIFF/MP3 等格式
+        import miniaudio
+        decoded = miniaudio.decode_file(out_path, dither=miniaudio.DitherMode.NONE)
+
+        if decoded.sample_width == 2:
+            dtype = np.int16
+        elif decoded.sample_width == 4:
+            dtype = np.int32
+        else:
+            dtype = np.uint8
+
+        samples = np.frombuffer(decoded.samples, dtype=dtype).astype(np.float32)
+        if decoded.nchannels == 2:
+            samples = samples.reshape((-1, 2))
+        samples = samples / float(2 ** (decoded.sample_width * 8 - 1))
+        return samples, decoded.sample_rate
+
     finally:
         try:
-            os.unlink(wav_path)
+            os.unlink(out_path)
         except OSError:
             pass
 

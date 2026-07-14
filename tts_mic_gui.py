@@ -45,22 +45,15 @@ from tts_mic import (
 # ---------------------------------------------------------------------------
 BASE_DIR = Path(__file__).parent
 
-# Edge TTS 可用语音列表（中文）
+# Edge TTS 可用语音列表（中文 — 实测验证）
 EDGE_VOICES = [
     ("zh-CN-XiaoxiaoNeural", "晓晓 (活泼女声)"),
     ("zh-CN-XiaoyiNeural", "晓伊 (温柔女声)"),
     ("zh-CN-YunxiNeural", "云希 (男声)"),
     ("zh-CN-YunyangNeural", "云扬 (新闻男声)"),
-    ("zh-CN-XiaochenNeural", "晓晨 (女声)"),
-    ("zh-CN-XiaohanNeural", "晓涵 (女声)"),
-    ("zh-CN-XiaomengNeural", "晓梦 (女声)"),
-    ("zh-CN-XiaomoNeural", "晓墨 (女声)"),
-    ("zh-CN-XiaoqiuNeural", "晓秋 (女声)"),
-    ("zh-CN-XiaoruiNeural", "晓睿 (女声)"),
-    ("zh-CN-XiaoshuangNeural", "晓双 (女声)"),
     ("zh-CN-XiaoxuanNeural", "晓萱 (女声)"),
-    ("zh-CN-XiaoyanNeural", "晓颜 (女声)"),
-    ("zh-CN-XiaozhenNeural", "晓甄 (女声)"),
+    ("zh-CN-liaoning-XiaobeiNeural", "晓蓓 (东北话)"),
+    ("zh-CN-shaanxi-XiaoniNeural", "晓妮 (陕西话)"),
     ("zh-TW-HsiaoChenNeural", "曉臻 (台湾女声)"),
     ("zh-TW-YunJheNeural", "雲哲 (台湾男声)"),
     ("zh-HK-HiuMaanNeural", "曉曼 (粤语女声)"),
@@ -347,16 +340,33 @@ class TTSMicApp:
     # UI 事件处理
     # ------------------------------------------------------------------
     def _on_engine_changed(self, event=None):
-        """引擎切换时调整可选项。"""
+        """引擎切换时同步恢复对应的语音列表和选中项。"""
         engine = self.engine_var.get()
         if engine == "edge":
+            # 恢复 Edge 语音列表
+            self.voice_cb["values"] = [v[0] for v in EDGE_VOICES]
+            edge_voice = self.config.get("voice", "zh-CN-XiaoxiaoNeural")
+            edge_ids = [v[0] for v in EDGE_VOICES]
+            if edge_voice in edge_ids:
+                self.voice_var.set(edge_voice)
+            else:
+                self.voice_var.set("zh-CN-XiaoxiaoNeural")
             self.voice_cb.configure(state="readonly")
+            self._update_voice_hint()
         elif engine == "google":
-            # Google TTS 用语言而非语音名
+            # 恢复 Google 语言列表
             self.voice_cb["values"] = [v[0] for v in GOOGLE_LANGS]
+            google_lang = self.config.get("google_lang", "zh-CN")
+            lang_ids = [v[0] for v in GOOGLE_LANGS]
+            if google_lang in lang_ids:
+                self.voice_var.set(google_lang)
+            else:
+                self.voice_var.set("zh-CN")
             self.voice_cb.configure(state="readonly")
+            self.voice_hint.configure(text="")
         else:
             self.voice_cb.configure(state="disabled")
+            self.voice_hint.configure(text="")
 
     def _on_volume_changed(self, value):
         """音量滑块变化。"""
@@ -380,25 +390,45 @@ class TTSMicApp:
     # 配置同步
     # ------------------------------------------------------------------
     def _sync_ui_to_config(self):
-        """把 UI 状态写入 config。"""
-        self.config["tts_engine"] = self.engine_var.get()
-        self.config["voice"] = self.voice_var.get()
+        """把 UI 状态写入 config —— 按引擎分别保存语音/语言。"""
+        engine = self.engine_var.get()
+        self.config["tts_engine"] = engine
         self.config["volume"] = self.volume_var.get() / 100.0
         self.config["output_device"] = self._get_selected_device()
+        # Edge 语音 vs Google 语言分开保存，避免互相覆盖
+        voice_val = self.voice_var.get()
+        if engine == "edge":
+            self.config["voice"] = voice_val
+        elif engine == "google":
+            self.config["google_lang"] = voice_val
 
     def _load_config_to_ui(self):
-        """把 config 恢复到 UI。"""
+        """把 config 恢复到 UI —— 按引擎恢复对应的语音/语言选择。"""
         cfg = self.config
         engine = cfg.get("tts_engine", "edge")
         self.engine_var.set(engine)
 
-        voice = cfg.get("voice", "zh-CN-XiaoxiaoNeural")
-        self.voice_var.set(voice)
-        self._update_voice_hint()
-        if engine == "offline":
-            self.voice_cb.configure(state="disabled")
+        if engine == "edge":
+            self.voice_cb["values"] = [v[0] for v in EDGE_VOICES]
+            voice = cfg.get("voice", "zh-CN-XiaoxiaoNeural")
+            edge_ids = [v[0] for v in EDGE_VOICES]
+            if voice not in edge_ids:
+                voice = "zh-CN-XiaoxiaoNeural"
+            self.voice_var.set(voice)
+            self.voice_cb.configure(state="readonly")
+            self._update_voice_hint()
         elif engine == "google":
             self.voice_cb["values"] = [v[0] for v in GOOGLE_LANGS]
+            lang = cfg.get("google_lang", "zh-CN")
+            lang_ids = [v[0] for v in GOOGLE_LANGS]
+            if lang not in lang_ids:
+                lang = "zh-CN"
+            self.voice_var.set(lang)
+            self.voice_cb.configure(state="readonly")
+            self.voice_hint.configure(text="")
+        else:
+            self.voice_cb.configure(state="disabled")
+            self.voice_hint.configure(text="")
 
         vol = cfg.get("volume", 1.0)
         self.volume_var.set(int(vol * 100))
