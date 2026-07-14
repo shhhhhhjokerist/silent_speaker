@@ -1,0 +1,22 @@
+{
+    "tts_engine": "edge",
+    "voice": "zh-CN",
+    "rate": "+10%",
+    "pitch": "+0Hz",
+    "volume": 1.0,
+    "output_device": 8,
+    "google_lang": "zh-CN",
+    "google_proxy": "",
+    "hot_phrases": {
+        "?": "你刚才说什么？",
+        "??": "能再说一遍吗？",
+        "ok": "好的没问题",
+        "no": "不行",
+        "wait": "等一下",
+        "help": "我需要帮助",
+        "lol": "哈哈哈",
+        "gg": "打得好，这局结束了",
+        "brb": "我马上回来",
+        "bye": "拜拜，下次再玩"
+    }
+}
