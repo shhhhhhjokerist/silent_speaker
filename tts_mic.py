@@ -388,8 +388,7 @@ def _tts_offline_macos(text, voice_name=None):
     """macOS: 使用原生 say 命令合成语音，失败则回退 pyttsx3。"""
     import subprocess
 
-    # ---- 方案 A: 原生 say 命令（最可靠）----
-    # macOS 中文语音：Tingting (普通话)
+    # ---- 方案 A: 原生 say 命令 ----
     voice = voice_name or "Tingting"
 
     with tempfile.NamedTemporaryFile(suffix=".aiff", delete=False) as f:
@@ -397,13 +396,12 @@ def _tts_offline_macos(text, voice_name=None):
 
     say_ok = False
     try:
-        # 先列出可用语音确认 voice 存在
+        # 检测可用语音
         result = subprocess.run(
             ["say", "-v", "?"], capture_output=True, timeout=5,
         )
         available = result.stdout.decode("utf-8", errors="replace")
         if voice not in available:
-            # 回退到系统默认语音
             voice = None
 
         cmd = ["say", "-r", "200", "-o", out_path]
@@ -413,32 +411,17 @@ def _tts_offline_macos(text, voice_name=None):
 
         subprocess.run(cmd, capture_output=True, timeout=10, check=True)
 
-        # 确认输出文件非空
         if os.path.getsize(out_path) < 100:
             raise RuntimeError("say 输出文件过小，可能为空")
 
         say_ok = True
 
-        import miniaudio
-        decoded = miniaudio.decode_file(out_path, dither=miniaudio.DitherMode.NONE)
-
-        if decoded.sample_width == 2:
-            dtype = np.int16
-        elif decoded.sample_width == 4:
-            dtype = np.int32
-        else:
-            dtype = np.uint8
-
-        samples = np.frombuffer(decoded.samples, dtype=dtype).astype(np.float32)
-        if decoded.nchannels == 2:
-            samples = samples.reshape((-1, 2))
-        samples = samples / float(2 ** (decoded.sample_width * 8 - 1))
-        return samples, decoded.sample_rate
+        # 解码音频：优先 aifc（macOS 原生 AIFF）→ wave → miniaudio
+        return _decode_audio_file(out_path)
 
     except Exception as e:
         if say_ok:
-            raise  # miniaudio 解码失败，不是 say 的问题
-        # say 失败 → 回退方案 B
+            raise
         print(f"  [macOS say 失败: {e}，回退 pyttsx3...]")
 
     finally:
@@ -447,8 +430,90 @@ def _tts_offline_macos(text, voice_name=None):
         except OSError:
             pass
 
-    # ---- 方案 B: pyttsx3 兜底（macOS 上不太稳定）----
+    # ---- 方案 B: pyttsx3 兜底 ----
     return _tts_offline_windows(text, voice_name)
+
+
+# ---------------------------------------------------------------------------
+# 通用音频文件解码（跨格式）
+# ---------------------------------------------------------------------------
+def _decode_audio_file(path):
+    """
+    解码音频文件，自动检测格式。
+    依次尝试: aifc (AIFF) → wave (WAV) → miniaudio (通用) → pydub (ffmpeg)
+    """
+    # 方案1: aifc — Python 内置，macOS say 命令默认输出格式
+    try:
+        import aifc
+        with aifc.open(path, "rb") as af:
+            nch = af.getnchannels()
+            sw = af.getsampwidth()
+            sr = af.getframerate()
+            nf = af.getnframes()
+            raw = af.readframes(nf)
+        return _pcm_to_samples(raw, nch, sw, sr)
+    except (EOFError, OSError, Exception):
+        pass
+
+    # 方案2: wave — Python 内置，Windows pyttsx3 输出格式
+    try:
+        import wave as _wave
+        with _wave.open(path, "rb") as wf:
+            nch = wf.getnchannels()
+            sw = wf.getsampwidth()
+            sr = wf.getframerate()
+            nf = wf.getnframes()
+            raw = wf.readframes(nf)
+        return _pcm_to_samples(raw, nch, sw, sr)
+    except (EOFError, OSError, Exception):
+        pass
+
+    # 方案3: miniaudio — 通用格式（MP3/FLAC/OGG 等）
+    try:
+        import miniaudio
+        decoded = miniaudio.decode_file(path, dither=miniaudio.DitherMode.NONE)
+        return _pcm_to_samples(
+            bytes(decoded.samples),
+            decoded.nchannels,
+            decoded.sample_width,
+            decoded.sample_rate,
+        )
+    except Exception:
+        pass
+
+    # 方案4: pydub + ffmpeg
+    try:
+        from pydub import AudioSegment
+        audio = AudioSegment.from_file(path)
+        samples = np.array(audio.get_array_of_samples(), dtype=np.float32)
+        if audio.channels == 2:
+            samples = samples.reshape((-1, 2))
+        samples = samples / (2 ** 15)
+        return samples, audio.frame_rate
+    except Exception:
+        pass
+
+    raise RuntimeError(
+        f"无法解码音频文件，请安装 ffmpeg: brew install ffmpeg\n"
+        f"  文件路径: {path}"
+    )
+
+
+def _pcm_to_samples(raw, nchannels, sample_width, sample_rate):
+    """将 PCM 原始字节转成 (float32 numpy array, sample_rate)。"""
+    if sample_width == 2:
+        dtype = np.int16
+    elif sample_width == 4:
+        dtype = np.int32
+    else:
+        dtype = np.uint8
+
+    samples = np.frombuffer(raw, dtype=dtype).astype(np.float32)
+    if nchannels == 2:
+        samples = samples.reshape((-1, 2))
+    max_val = float(2 ** (sample_width * 8 - 1))
+    samples = samples / max_val
+    return samples, sample_rate
 
 
 def _tts_offline_windows(text, voice_name=None):
@@ -477,23 +542,7 @@ def _tts_offline_windows(text, voice_name=None):
     try:
         engine.save_to_file(text, out_path)
         engine.runAndWait()
-
-        import miniaudio
-        decoded = miniaudio.decode_file(out_path, dither=miniaudio.DitherMode.NONE)
-
-        if decoded.sample_width == 2:
-            dtype = np.int16
-        elif decoded.sample_width == 4:
-            dtype = np.int32
-        else:
-            dtype = np.uint8
-
-        samples = np.frombuffer(decoded.samples, dtype=dtype).astype(np.float32)
-        if decoded.nchannels == 2:
-            samples = samples.reshape((-1, 2))
-        samples = samples / float(2 ** (decoded.sample_width * 8 - 1))
-        return samples, decoded.sample_rate
-
+        return _decode_audio_file(out_path)
     finally:
         try:
             os.unlink(out_path)
