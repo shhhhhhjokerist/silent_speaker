@@ -1,3 +1,11 @@
-vscode/
+.vscode/
 
 __pycache__/
+
+.gitignore
+
+build/
+
+dist/
+
+tts_mic_gui.spec
