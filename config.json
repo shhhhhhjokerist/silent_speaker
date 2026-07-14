@@ -1,5 +1,5 @@
 {
-    "tts_engine": "edge",
+    "tts_engine": "offline",
     "voice": "zh-CN-XiaoxiaoNeural",
     "rate": "+10%",
     "pitch": "+0Hz",

@@ -374,10 +374,69 @@ def _read_wav(path):
 def tts_offline(text, voice_name=None):
     """
     使用系统离线 TTS 合成语音。
-    Windows: SAPI5 (pyttsx3)
-    macOS:   NSSpeechSynthesizer (pyttsx3) — 输出 AIFF 格式
+    Windows: SAPI5 (pyttsx3) → miniaudio 解码
+    macOS:   原生 say 命令 → miniaudio 解码（pyttsx3 在 macOS 上不稳定）
     返回 (audio_samples, sample_rate)。
     """
+    if sys.platform == "darwin":
+        return _tts_offline_macos(text, voice_name)
+    else:
+        return _tts_offline_windows(text, voice_name)
+
+
+def _tts_offline_macos(text, voice_name=None):
+    """macOS: 使用原生 say 命令合成语音。"""
+    import subprocess
+
+    # macOS 中文语音：Tingting (普通话), Sin-ji (粤语), Mei-Jia (台湾)
+    voice = voice_name or "Tingting"
+
+    # say 命令输出 AIFF 格式（miniaudio 可自动解码）
+    with tempfile.NamedTemporaryFile(suffix=".aiff", delete=False) as f:
+        out_path = f.name
+
+    try:
+        subprocess.run(
+            ["say", "-v", voice, "-r", "200", "-o", out_path, text],
+            capture_output=True,
+            timeout=10,
+            check=True,
+        )
+
+        import miniaudio
+        decoded = miniaudio.decode_file(out_path, dither=miniaudio.DitherMode.NONE)
+
+        if decoded.sample_width == 2:
+            dtype = np.int16
+        elif decoded.sample_width == 4:
+            dtype = np.int32
+        else:
+            dtype = np.uint8
+
+        samples = np.frombuffer(decoded.samples, dtype=dtype).astype(np.float32)
+        if decoded.nchannels == 2:
+            samples = samples.reshape((-1, 2))
+        samples = samples / float(2 ** (decoded.sample_width * 8 - 1))
+        return samples, decoded.sample_rate
+
+    except FileNotFoundError:
+        raise RuntimeError(
+            "macOS say 命令不可用。请确认系统完整性。"
+        )
+    except subprocess.CalledProcessError as e:
+        # 语音名可能无效，尝试默认语音
+        stderr = e.stderr.decode("utf-8", errors="replace") if e.stderr else ""
+        raise RuntimeError(f"macOS say 命令失败: {stderr}")
+
+    finally:
+        try:
+            os.unlink(out_path)
+        except OSError:
+            pass
+
+
+def _tts_offline_windows(text, voice_name=None):
+    """Windows: 使用 SAPI5 (pyttsx3) 合成语音。"""
     import pyttsx3
 
     engine = pyttsx3.init()
@@ -391,14 +450,11 @@ def tts_offline(text, voice_name=None):
                 engine.setProperty("voice", v.id)
                 break
     else:
-        # 优先选中文语音
         for v in voices:
             if "chinese" in v.name.lower() or "zh" in v.name.lower() or "hui" in v.name.lower():
                 engine.setProperty("voice", v.id)
                 break
 
-    # macOS pyttsx3 原生输出可能不是 WAV（NSSpeechSynthesizer → AIFF）
-    # 统一用 .wav 后缀，但解码时用 miniaudio 自动检测格式
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
         out_path = f.name
 
@@ -406,7 +462,6 @@ def tts_offline(text, voice_name=None):
         engine.save_to_file(text, out_path)
         engine.runAndWait()
 
-        # 用 miniaudio 解码，自动识别 WAV/AIFF/MP3 等格式
         import miniaudio
         decoded = miniaudio.decode_file(out_path, dither=miniaudio.DitherMode.NONE)
 
