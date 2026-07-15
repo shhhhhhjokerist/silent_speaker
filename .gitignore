@@ -10,3 +10,5 @@ tts_mic_gui.spec
 tts_mic.spec
 
 .git/
+
+.DS_Store
