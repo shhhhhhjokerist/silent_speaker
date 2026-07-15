@@ -11,11 +11,11 @@ echo "  TTS Virtual Mic - macOS Build"
 echo "================================================"
 echo ""
 
-# ---- Check Python ----
-if ! command -v python3 &>/dev/null; then
-    echo "[ERROR] Python 3 not found. Install via: brew install python@3.11"
-    exit 1
-fi
+# # ---- Check Python ----
+# if ! command -v pytho。/n3 &>/dev/null; then
+#     echo "[ERROR] Python 3 not found. Install via: brew install python@3.11"
+#     exit 1
+# fi
 
 PYTHON=$(command -v python3)
 echo "[INFO] Using Python: $PYTHON"
@@ -43,45 +43,14 @@ echo ""
 
 # ---- Build CLI version ----
 echo "[2/3] Building tts_mic (CLI version)..."
-$PYTHON -m PyInstaller --noconfirm --onefile --console --name tts_mic \
-    --hidden-import=miniaudio \
-    --hidden-import=sounddevice \
-    --hidden-import=pyttsx3 \
-    --hidden-import=edge_tts \
-    --hidden-import=gtts \
-    --hidden-import=pydub \
-    --hidden-import=numpy \
-    --hidden-import=asyncio \
-    --hidden-import=aiohttp \
-    --hidden-import=requests \
-    --add-data "config.json:." \
-    --collect-all=edge_tts \
-    --collect-all=miniaudio \
-    --collect-all=sounddevice \
-    tts_mic.py
+$PYTHON -m PyInstaller --noconfirm tts_mic.spec
 echo "[OK] CLI build complete -> dist/tts_mic"
 echo ""
 
 # ---- Build GUI version (if tkinter available) ----
 if [ "$BUILD_GUI" = true ]; then
     echo "[3/3] Building tts_mic_gui (GUI version)..."
-    $PYTHON -m PyInstaller --noconfirm --onefile --console --name tts_mic_gui \
-        --hidden-import=miniaudio \
-        --hidden-import=sounddevice \
-        --hidden-import=pyttsx3 \
-        --hidden-import=edge_tts \
-        --hidden-import=gtts \
-        --hidden-import=pydub \
-        --hidden-import=numpy \
-        --hidden-import=asyncio \
-        --hidden-import=aiohttp \
-        --hidden-import=requests \
-        --hidden-import=tkinter \
-        --add-data "config.json:." \
-        --collect-all=edge_tts \
-        --collect-all=miniaudio \
-        --collect-all=sounddevice \
-        tts_mic_gui.py
+    $PYTHON -m PyInstaller --noconfirm tts_mic_gui.spec
     echo "[OK] GUI build complete -> dist/tts_mic_gui"
 else
     echo "[3/3] Skipping GUI build (tkinter not available)"

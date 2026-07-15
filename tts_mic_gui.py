@@ -10,6 +10,7 @@ TTS 虚拟麦克风 — GUI 版
 
 import asyncio
 import json
+import os
 import sys
 import threading
 import tkinter as tk

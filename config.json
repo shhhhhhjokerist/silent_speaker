@@ -1,11 +1,11 @@
 {
-    "tts_engine": "offline",
+    "tts_engine": "google",
     "voice": "zh-CN-XiaoxiaoNeural",
     "rate": "+10%",
     "pitch": "+0Hz",
-    "volume": 1.0,
-    "output_device": 6,
-    "google_lang": "zh-CN",
+    "volume": 0.1,
+    "output_device": 2,
+    "google_lang": "zh-TW",
     "google_proxy": "",
     "hot_phrases": {
         "?": "你刚才说什么？",
